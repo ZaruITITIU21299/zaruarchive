@@ -3,6 +3,7 @@ import { LanguageProvider } from '@/contexts/LanguageContext'
 import { GameProvider } from '@/contexts/GameContext'
 import { AuthProvider } from '@/contexts/AuthContext'
 import { AdminProvider } from '@/contexts/AdminContext'
+import { GlossaryProvider } from '@/contexts/GlossaryContext'
 import { AppRoutes } from '@/AppRoutes'
 
 export default function App() {
@@ -12,7 +13,9 @@ export default function App() {
         <LanguageProvider>
           <AuthProvider>
             <AdminProvider>
-              <AppRoutes />
+              <GlossaryProvider>
+                <AppRoutes />
+              </GlossaryProvider>
             </AdminProvider>
           </AuthProvider>
         </LanguageProvider>

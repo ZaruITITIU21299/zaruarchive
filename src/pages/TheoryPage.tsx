@@ -1,14 +1,17 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { useAdmin } from "@/contexts/AdminContext";
 import { useGame } from "@/contexts/GameContext";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { AdminService } from "@/services/AdminService";
+import { ArticleService } from "@/services/ArticleService";
 import { ArticleForm, type ArticleFormData } from "@/components/admin/forms/ArticleForm";
 import { ConfirmDialog } from "@/components/admin/ConfirmDialog";
+import type { ArticleListItem } from "@/types";
 
 type Status = "All" | "Speculative" | "Plausible" | "Proven" | "Debunked";
 
+/** Display shape for a theory card (API data + optional placeholder fields for UI). */
 interface TheoryEntry {
   id: string;
   title: string;
@@ -17,6 +20,24 @@ interface TheoryEntry {
   tags: string[];
   author: string;
   date: string;
+}
+
+function formatListDate(iso: string | null): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+function toTheoryEntry(item: ArticleListItem): TheoryEntry {
+  return {
+    id: item.id,
+    title: item.title,
+    summary: item.summary,
+    status: "Speculative",
+    author: "—",
+    date: formatListDate(item.publishedAt),
+    tags: [],
+  };
 }
 
 const STATUSES: Status[] = [
@@ -43,67 +64,14 @@ const STATUS_STYLE: Record<string, { bg: string; text: string; dot: string }> =
     Debunked: { bg: "bg-red-500/15", text: "text-red-400", dot: "bg-red-400" },
   };
 
-const ENTRIES: TheoryEntry[] = [
-  {
-    id: "1",
-    title: "The Great Filter of Sector 7",
-    summary:
-      "Recurring signal anomalies at the edge of Sector 7 may correlate with Void Walker migration patterns, suggesting intentional communication beacons.",
-    status: "Speculative",
-    tags: ["Anomaly", "Sector 7"],
-    author: "Dr. Elara Voss",
-    date: "Feb 24",
-  },
-  {
-    id: "2",
-    title: "Resonance Cascade Hypothesis",
-    summary:
-      "A unified model explaining how Resonance Liberation energy interacts with Tacet Discord at the quantum level, potentially unlocking controlled dissipation.",
-    status: "Plausible",
-    tags: ["Resonance", "Energy"],
-    author: "Dr. Mira Chen",
-    date: "Feb 18",
-  },
-  {
-    id: "3",
-    title: "Sentinel Origin Theory",
-    summary:
-      "Archaeological evidence points to Sentinels being engineered rather than evolved, with core signatures matching pre-Lament technology.",
-    status: "Proven",
-    tags: ["Sentinel", "History"],
-    author: "Archivist Kael",
-    date: "Feb 10",
-  },
-  {
-    id: "4",
-    title: "Dual-Core Solaris Model",
-    summary:
-      "The hypothesis that Solaris-3 once contained two planetary cores has been disproven by deep seismic scans from the Helix Array restoration project.",
-    status: "Debunked",
-    tags: ["Geology", "Solaris-3"],
-    author: "Geo Division",
-    date: "Jan 30",
-  },
-  {
-    id: "5",
-    title: "Chrono-Synapse Neural Pathway",
-    summary:
-      "Temporal perception distortion in affected individuals may be linked to dormant resonance frequencies embedded in pre-Lament neural implants.",
-    status: "Speculative",
-    tags: ["Medical", "Chrono-Synapse"],
-    author: "Dr. Mira Chen",
-    date: "Jan 22",
-  },
-  {
-    id: "6",
-    title: "Aetherium Grid Overload Cause",
-    summary:
-      "New evidence suggests the Grid failure during the Collapse was triggered by a coordinated external signal, not internal resonance feedback.",
-    status: "Plausible",
-    tags: ["Aetherium", "Collapse"],
-    author: "Intel Division",
-    date: "Jan 15",
-  },
+/** Example/placeholder entries for reference (not used when real data is loaded). */
+const EXAMPLE_ENTRIES: TheoryEntry[] = [
+  { id: "1", title: "The Great Filter of Sector 7", summary: "Recurring signal anomalies at the edge of Sector 7 may correlate with Void Walker migration patterns, suggesting intentional communication beacons.", status: "Speculative", tags: ["Anomaly", "Sector 7"], author: "Dr. Elara Voss", date: "Feb 24" },
+  { id: "2", title: "Resonance Cascade Hypothesis", summary: "A unified model explaining how Resonance Liberation energy interacts with Tacet Discord at the quantum level, potentially unlocking controlled dissipation.", status: "Plausible", tags: ["Resonance", "Energy"], author: "Dr. Mira Chen", date: "Feb 18" },
+  { id: "3", title: "Sentinel Origin Theory", summary: "Archaeological evidence points to Sentinels being engineered rather than evolved, with core signatures matching pre-Lament technology.", status: "Proven", tags: ["Sentinel", "History"], author: "Archivist Kael", date: "Feb 10" },
+  { id: "4", title: "Dual-Core Solaris Model", summary: "The hypothesis that Solaris-3 once contained two planetary cores has been disproven by deep seismic scans from the Helix Array restoration project.", status: "Debunked", tags: ["Geology", "Solaris-3"], author: "Geo Division", date: "Jan 30" },
+  { id: "5", title: "Chrono-Synapse Neural Pathway", summary: "Temporal perception distortion in affected individuals may be linked to dormant resonance frequencies embedded in pre-Lament neural implants.", status: "Speculative", tags: ["Medical", "Chrono-Synapse"], author: "Dr. Mira Chen", date: "Jan 22" },
+  { id: "6", title: "Aetherium Grid Overload Cause", summary: "New evidence suggests the Grid failure during the Collapse was triggered by a coordinated external signal, not internal resonance feedback.", status: "Plausible", tags: ["Aetherium", "Collapse"], author: "Intel Division", date: "Jan 15" },
 ];
 
 const SORT_OPTIONS = ["Newest", "Oldest", "A → Z"] as const;
@@ -115,10 +83,32 @@ export default function TheoryPage() {
   const { editMode } = useAdmin();
   const { gameId } = useGame();
   const { lang } = useLanguage();
+  const [articles, setArticles] = useState<ArticleListItem[]>([]);
+  const [loadingList, setLoadingList] = useState(true);
   const [formOpen, setFormOpen] = useState(false);
   const [editingEntry, setEditingEntry] = useState<TheoryEntry | null>(null);
+  const [editingArticle, setEditingArticle] = useState<Awaited<ReturnType<AdminService["getArticle"]>> | null>(null);
+  const [loadingArticle, setLoadingArticle] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
+
+  const fetchTheories = () => {
+    if (!gameId || !lang) return;
+    setLoadingList(true);
+    const svc = new ArticleService(gameId, lang);
+    svc.fetchAll("theory").then((data) => {
+      setArticles(data);
+    }).finally(() => setLoadingList(false));
+  };
+
+  useEffect(() => {
+    fetchTheories();
+  }, [gameId, lang]);
+
+  const entries: TheoryEntry[] = useMemo(
+    () => articles.map(toTheoryEntry),
+    [articles]
+  );
 
   const handleSave = async (data: ArticleFormData) => {
     const svc = new AdminService(gameId, lang);
@@ -145,7 +135,54 @@ export default function TheoryPage() {
     }
     setFormOpen(false);
     setEditingEntry(null);
+    setEditingArticle(null);
+    fetchTheories();
   };
+
+  const openEditForm = (entry: TheoryEntry) => {
+    setEditingEntry(entry);
+    setEditingArticle(null);
+    setLoadingArticle(true);
+    const svc = new AdminService(gameId, lang);
+    svc.getArticle(entry.id).then((article) => {
+      setEditingArticle(article ?? null);
+      if (article) setFormOpen(true);
+    }).finally(() => {
+      setLoadingArticle(false);
+    });
+  };
+
+  const openAddForm = () => {
+    setEditingEntry(null);
+    setEditingArticle(null);
+    setFormOpen(true);
+  };
+
+  const formArticle = formOpen && editingEntry && editingArticle
+    ? {
+        id: editingArticle.id,
+        title: editingArticle.translations.en?.title ?? '',
+        summary: editingArticle.translations.en?.summary ?? '',
+        content_en: editingArticle.translations.en?.content ?? undefined,
+        content_vi: editingArticle.translations.vi?.content ?? undefined,
+        title_vi: editingArticle.translations.vi?.title ?? '',
+        summary_vi: editingArticle.translations.vi?.summary ?? '',
+        imagePath: editingArticle.image_path,
+        section: editingArticle.section,
+        readTimeMin: editingArticle.read_time_min,
+        isFeatured: editingArticle.is_featured,
+      }
+    : formOpen && editingEntry
+      ? {
+          id: editingEntry.id,
+          title: editingEntry.title,
+          summary: editingEntry.summary,
+          imagePath: null as string | null,
+          section: 'theory' as const,
+          readTimeMin: null as number | null,
+          isFeatured: false,
+        }
+      : null;
 
   const handleDelete = async () => {
     if (!deleteTarget) return;
@@ -154,20 +191,21 @@ export default function TheoryPage() {
     await svc.deleteArticle(deleteTarget);
     setDeleteTarget(null);
     setDeleting(false);
+    fetchTheories();
   };
 
   const filtered = useMemo(() => {
-    let results = ENTRIES.filter((e) => {
+    let results = entries.filter((e) => {
       const matchesSearch =
         e.title.toLowerCase().includes(search.toLowerCase()) ||
         e.summary.toLowerCase().includes(search.toLowerCase());
       const matchesStatus = activeStatus === "All" || e.status === activeStatus;
       return matchesSearch && matchesStatus;
     });
-    if (sort === "A → Z")
-      results = [...results].sort((a, b) => a.title.localeCompare(b.title));
+    if (sort === "A → Z") results = [...results].sort((a, b) => a.title.localeCompare(b.title));
+    else if (sort === "Oldest") results = [...results].reverse();
     return results;
-  }, [search, activeStatus, sort]);
+  }, [entries, search, activeStatus, sort]);
 
   const style = (s: string) => STATUS_STYLE[s] ?? STATUS_STYLE.Speculative;
 
@@ -240,7 +278,7 @@ export default function TheoryPage() {
         {editMode && (
           <div className="mb-6">
             <button
-              onClick={() => { setEditingEntry(null); setFormOpen(true); }}
+              onClick={openAddForm}
               className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-purple-500/20 border border-purple-500/30 text-purple-400 hover:bg-purple-500/30 transition-colors text-sm font-medium"
             >
               <span className="material-symbols-outlined text-[18px]">add</span>
@@ -251,6 +289,12 @@ export default function TheoryPage() {
 
         {/* Results */}
         <div className="space-y-3">
+          {loadingList ? (
+            <div className="flex justify-center py-16">
+              <span className="material-symbols-outlined animate-spin text-4xl text-purple-400">progress_activity</span>
+            </div>
+          ) : (
+          <>
           {filtered.map((entry) => {
             const s = style(entry.status);
             return (
@@ -305,8 +349,9 @@ export default function TheoryPage() {
                     {editMode ? (
                       <div className="flex gap-1.5 shrink-0 mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
                         <button
-                          onClick={(e) => { e.preventDefault(); e.stopPropagation(); setEditingEntry(entry); setFormOpen(true); }}
+                          onClick={(e) => { e.preventDefault(); e.stopPropagation(); openEditForm(entry); }}
                           className="p-1.5 rounded text-amber-400 hover:bg-amber-500/20 transition-colors"
+                          disabled={loadingArticle}
                         >
                           <span className="material-symbols-outlined text-[18px]">edit</span>
                         </button>
@@ -327,8 +372,9 @@ export default function TheoryPage() {
               </div>
             );
           })}
-
-          {filtered.length === 0 && (
+          </>
+          )}
+          {!loadingList && filtered.length === 0 && (
             <div className="text-center py-16 text-slate-500">
               <span className="material-symbols-outlined text-4xl mb-3 block">
                 search_off
@@ -360,19 +406,16 @@ export default function TheoryPage() {
 
       {formOpen && (
         <ArticleForm
-          article={editingEntry ? {
-            id: editingEntry.id,
-            title: editingEntry.title,
-            summary: editingEntry.summary,
-            imagePath: null,
-            section: 'theory',
-            readTimeMin: null,
-            isFeatured: false,
-          } : null}
+          article={formArticle}
           defaultSection="theory"
           onSave={handleSave}
-          onCancel={() => { setFormOpen(false); setEditingEntry(null); }}
+          onCancel={() => { setFormOpen(false); setEditingEntry(null); setEditingArticle(null); }}
         />
+      )}
+      {loadingArticle && (
+        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/50">
+          <span className="material-symbols-outlined animate-spin text-4xl text-white">progress_activity</span>
+        </div>
       )}
 
       <ConfirmDialog

@@ -1,5 +1,13 @@
 import { Link, useParams, useNavigate } from 'react-router-dom'
+import { useEffect, useState, useCallback } from 'react'
 import { useLanguage } from '@/contexts/LanguageContext'
+import { useGame } from '@/contexts/GameContext'
+import { useAdmin } from '@/contexts/AdminContext'
+import { ArticleService } from '@/services/ArticleService'
+import type { Article } from '@/types'
+import { parseArticleContent } from '@/utils/articleContent'
+import { ArticleContentBlocks } from '@/components/article/ArticleContentBlocks'
+import { EditableArticleContent } from '@/components/article/EditableArticleContent'
 
 const RELATED = [
   {
@@ -18,12 +26,66 @@ const RELATED = [
 
 const ARTICLE_TAGS = ['Anomaly', 'Sector 7', 'Signals', 'Void Walkers', 'Deep Space']
 
+function formatDate(iso: string | null): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
 export default function ArticleDetailPage() {
   const { id } = useParams()
   const navigate = useNavigate()
   const { lang, setLang } = useLanguage()
+  const { gameId } = useGame()
+  const { editMode } = useAdmin()
+  const [article, setArticle] = useState<Article | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [notFound, setNotFound] = useState(false)
+  const [refreshKey, setRefreshKey] = useState(0)
 
-  void id
+  const fetchArticle = useCallback(() => {
+    if (!id || !gameId) {
+      setLoading(false)
+      return
+    }
+    setLoading(true)
+    setNotFound(false)
+    const svc = new ArticleService(gameId, lang)
+    svc.fetchById(id).then((a) => {
+      setArticle(a ?? null)
+      setNotFound(!a)
+    }).finally(() => setLoading(false))
+  }, [id, gameId, lang])
+
+  useEffect(() => { fetchArticle() }, [fetchArticle, refreshKey])
+
+  const contentBlocks = article?.content ? parseArticleContent(article.content) : []
+  const hasBlocks = contentBlocks.length > 0
+
+  const handleSaved = () => setRefreshKey((k) => k + 1)
+
+  if (loading) {
+    return (
+      <div className="min-h-screen text-slate-100 flex items-center justify-center">
+        <span className="material-symbols-outlined animate-spin text-4xl text-primary">progress_activity</span>
+      </div>
+    )
+  }
+
+  if (notFound || !article) {
+    return (
+      <div className="min-h-screen text-slate-100 flex flex-col items-center justify-center gap-4">
+        <span className="material-symbols-outlined text-6xl text-slate-500">article</span>
+        <p className="text-slate-400">Article not found.</p>
+        <button
+          onClick={() => navigate(-1)}
+          className="px-4 py-2 rounded-lg bg-primary/20 text-primary border border-primary/30 hover:bg-primary/30"
+        >
+          Go back
+        </button>
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-screen text-slate-100">
@@ -42,7 +104,7 @@ export default function ArticleDetailPage() {
             <span className="material-symbols-outlined text-[14px]">chevron_right</span>
             <span className="text-slate-300">Theories</span>
             <span className="material-symbols-outlined text-[14px]">chevron_right</span>
-            <span className="text-primary truncate max-w-[200px]">The Great Filter of Sector 7</span>
+            <span className="text-primary truncate max-w-[200px]">{article.title}</span>
           </div>
         </div>
 
@@ -68,22 +130,20 @@ export default function ArticleDetailPage() {
         {/* Article header */}
         <div className="mb-10">
           <h1 className="text-3xl md:text-5xl font-bold leading-tight mb-6 bg-clip-text text-transparent bg-gradient-to-r from-white via-white to-primary/80">
-            The Great Filter of Sector 7: Anomalous Signal Patterns
+            {article.title}
           </h1>
 
           <div className="flex flex-wrap items-center gap-3 mb-6">
             <span className="inline-flex items-center gap-2 bg-[#16262c] rounded-full px-4 py-1.5 text-sm">
-              <span className="material-symbols-outlined text-primary text-[16px]">person</span>
-              <span className="text-slate-300">Dr. Elara Voss</span>
-            </span>
-            <span className="inline-flex items-center gap-2 bg-[#16262c] rounded-full px-4 py-1.5 text-sm">
               <span className="material-symbols-outlined text-primary text-[16px]">calendar_today</span>
-              <span className="text-slate-300">Feb 24, 3045</span>
+              <span className="text-slate-300">{formatDate(article.publishedAt)}</span>
             </span>
-            <span className="inline-flex items-center gap-2 bg-[#16262c] rounded-full px-4 py-1.5 text-sm">
-              <span className="material-symbols-outlined text-primary text-[16px]">schedule</span>
-              <span className="text-slate-300">12 min read</span>
-            </span>
+            {article.readTimeMin != null && (
+              <span className="inline-flex items-center gap-2 bg-[#16262c] rounded-full px-4 py-1.5 text-sm">
+                <span className="material-symbols-outlined text-primary text-[16px]">schedule</span>
+                <span className="text-slate-300">{article.readTimeMin} min read</span>
+              </span>
+            )}
           </div>
 
           <div className="flex items-center justify-between">
@@ -111,82 +171,21 @@ export default function ArticleDetailPage() {
         <div className="h-px bg-gradient-to-r from-transparent via-[#223f49] to-transparent mb-10" />
 
         {/* Article body */}
-        <article className="prose prose-invert max-w-none space-y-8">
-          <p className="text-lg text-slate-300 leading-relaxed">
-            For decades, the outer boundary of <span className="glossary-link">Sector 7</span> has
-            remained one of the most enigmatic regions in charted space. What began as routine
-            electromagnetic interference has evolved into a complex web of recurring signal patterns
-            that defy conventional astrophysical models. This report compiles findings from three
-            independent research stations and proposes a unified theory for the anomalies.
-          </p>
-
-          <blockquote className="glass-panel p-6 rounded-xl border-l-4 border-primary not-italic">
-            <p className="text-slate-200 text-base leading-relaxed mb-3">
-              "The signals aren't random. They carry structure — a periodicity that suggests
-              intentionality. Whether that intent is biological, mechanical, or something else
-              entirely remains the central question."
-            </p>
-            <footer className="text-sm text-primary font-medium">
-              — Dr. Elara Voss, Lead Analyst, Zephyr Station
-            </footer>
-          </blockquote>
-
-          <section>
-            <h2 className="text-2xl font-bold text-white mb-4">
-              <span className="text-primary font-mono">01.</span> Signal Origin &amp; Detection History
-            </h2>
-            <p className="text-slate-300 leading-relaxed mb-4">
-              The first anomalous transmission was logged in Cycle 2987 by the automated relay
-              network orbiting <span className="glossary-link">Helios IV</span>. Initially
-              dismissed as stellar noise, subsequent analysis revealed a consistent 47.3-second
-              interval between pulse clusters — a signature too precise for natural phenomena.
-            </p>
-            <p className="text-slate-300 leading-relaxed">
-              Cross-referencing with <span className="glossary-link">Void Walker</span> migration
-              data revealed a striking correlation: signal intensity peaks coincide with documented
-              swarm movements within a 0.3 parsec margin of error. The implications of this
-              correlation are explored in Section 02.
-            </p>
-          </section>
-
-          <figure className="rounded-xl overflow-hidden border border-[#223f49]/50">
-            <img
-              src="https://placehold.co/900x400/0a1216/0db9f2?text=Signal+Pattern+Visualization"
-              alt="Signal pattern visualization showing recurring pulse clusters"
-              className="w-full"
-            />
-            <figcaption className="bg-[#101e23] px-5 py-3 text-sm text-slate-500 flex items-center gap-2">
-              <span className="material-symbols-outlined text-[16px] text-primary">image</span>
-              Fig 1. Signal pattern overlay from Relay Stations Alpha, Beta, and Gamma (Cycles 2987–3044)
-            </figcaption>
-          </figure>
-
-          <section>
-            <h2 className="text-2xl font-bold text-white mb-4">
-              <span className="text-primary font-mono">02.</span> Void Walker Correlation Hypothesis
-            </h2>
-            <p className="text-slate-300 leading-relaxed mb-4">
-              The <span className="glossary-link">Void Walkers</span> — an ancient nomadic species
-              renowned for their stealth capabilities — have long been suspected of utilizing
-              unconventional communication methods. The correlation between their migratory patterns
-              and the Sector 7 signals opens several theoretical pathways:
-            </p>
-
-            <ul className="space-y-3">
-              {[
-                'The signals may serve as navigational beacons for swarm coordination across deep space.',
-                'Frequency modulations could encode territorial boundaries recognizable to other species.',
-                'Pulse timing aligns with theorized Void Walker bio-rhythmic cycles documented by Dr. Kael.',
-                'Signal degradation patterns suggest a source moving at sub-light speeds — consistent with known Void Walker propulsion.',
-              ].map((item, i) => (
-                <li key={i} className="flex items-start gap-3 text-slate-300">
-                  <span className="material-symbols-outlined text-primary text-[18px] mt-0.5 shrink-0">check_circle</span>
-                  <span className="leading-relaxed">{item}</span>
-                </li>
-              ))}
-            </ul>
-          </section>
-        </article>
+        {editMode ? (
+          <EditableArticleContent
+            blocks={contentBlocks}
+            articleId={article.id}
+            onSaved={handleSaved}
+          />
+        ) : hasBlocks ? (
+          <ArticleContentBlocks blocks={contentBlocks} />
+        ) : article.content?.trim() ? (
+          <div className="prose prose-invert max-w-none text-slate-300 whitespace-pre-wrap">
+            {article.content}
+          </div>
+        ) : (
+          <p className="text-slate-500">No content yet.</p>
+        )}
 
         {/* Related Records */}
         <div className="mt-16">

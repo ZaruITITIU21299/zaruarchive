@@ -73,6 +73,18 @@ export interface ArticleInput {
   content?: OptionalTranslationPair
 }
 
+export interface AdminArticleWithTranslations {
+  id: string
+  section: string
+  image_path: string | null
+  read_time_min: number | null
+  is_featured: boolean
+  translations: {
+    en?: { title: string; summary: string | null; content: string | null }
+    vi?: { title: string; summary: string | null; content: string | null }
+  }
+}
+
 export class AdminService extends BaseService {
 
   private async getUserId(): Promise<string | null> {
@@ -338,6 +350,45 @@ export class AdminService extends BaseService {
       .update({ deleted_at: new Date().toISOString() })
       .eq('id', id)
     if (error) throw new Error(`Failed to delete article: ${error.message}`)
+  }
+
+  /** Fetch a single article with translations (en, vi) for admin editing. */
+  async getArticle(id: string): Promise<AdminArticleWithTranslations | null> {
+    const { data: article, error: articleError } = await this.db
+      .from('articles')
+      .select('id, section, image_path, read_time_min, is_featured')
+      .eq('id', id)
+      .eq('game_id', this.gameId)
+      .maybeSingle()
+
+    if (articleError || !article) return null
+
+    const { data: translations, error: transError } = await this.db
+      .from('article_translations')
+      .select('lang, title, summary, content')
+      .eq('article_id', id)
+      .in('lang', ['en', 'vi'])
+
+    if (transError) return null
+
+    const transByLang: AdminArticleWithTranslations['translations'] = {}
+    for (const row of translations ?? []) {
+      const lang = row.lang as 'en' | 'vi'
+      transByLang[lang] = {
+        title: row.title ?? '',
+        summary: row.summary ?? null,
+        content: row.content ?? null,
+      }
+    }
+
+    return {
+      id: article.id as string,
+      section: article.section as string,
+      image_path: article.image_path as string | null,
+      read_time_min: article.read_time_min as number | null,
+      is_featured: article.is_featured as boolean,
+      translations: transByLang,
+    }
   }
 
   // ─── Entity Attributes (flexible per-game values) ───────────────────────

@@ -146,6 +146,46 @@ export interface ArticleListItem {
   summary: string
 }
 
+// ─── Article content blocks (structured editor) ─────────────────────────────
+
+export type ParagraphSegment = { type: 'text'; value: string } | { type: 'glossary'; value: string }
+
+export interface ArticleBlockParagraph {
+  type: 'paragraph'
+  segments: ParagraphSegment[]
+}
+
+export interface ArticleBlockBlockquote {
+  type: 'blockquote'
+  quote: string
+  footer: string
+}
+
+export interface ArticleBlockSection {
+  type: 'section'
+  number: string
+  title: string
+}
+
+export interface ArticleBlockList {
+  type: 'list'
+  items: string[]
+}
+
+export interface ArticleBlockFigure {
+  type: 'figure'
+  imageUrl: string
+  alt?: string
+  caption: string
+}
+
+export type ArticleBlock =
+  | ArticleBlockParagraph
+  | ArticleBlockBlockquote
+  | ArticleBlockSection
+  | ArticleBlockList
+  | ArticleBlockFigure
+
 // ─── Tags ───────────────────────────────────────────────────────────────────
 
 export interface Tag {

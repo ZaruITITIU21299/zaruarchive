@@ -1,14 +1,17 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { useAdmin } from '@/contexts/AdminContext'
 import { useGame } from '@/contexts/GameContext'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { AdminService } from '@/services/AdminService'
+import { ArticleService } from '@/services/ArticleService'
 import { ArticleForm, type ArticleFormData } from '@/components/admin/forms/ArticleForm'
 import { ConfirmDialog } from '@/components/admin/ConfirmDialog'
+import type { ArticleListItem } from '@/types'
 
 type ArticleType = 'All' | 'Editorial' | 'Guide' | 'Event Recap' | 'Analysis'
 
+/** Display shape for an article card (API data + optional placeholder fields for UI). */
 interface ArticleEntry {
   id: string
   title: string
@@ -20,6 +23,25 @@ interface ArticleEntry {
   tags: string[]
 }
 
+function formatListDate(iso: string | null): string {
+  if (!iso) return '—'
+  const d = new Date(iso)
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+}
+
+function toArticleEntry(item: ArticleListItem): ArticleEntry {
+  return {
+    id: item.id,
+    title: item.title,
+    summary: item.summary,
+    type: 'Editorial',
+    author: '—',
+    date: formatListDate(item.publishedAt),
+    readMin: item.readTimeMin ?? 0,
+    tags: [],
+  }
+}
+
 const ARTICLE_TYPES: ArticleType[] = ['All', 'Editorial', 'Guide', 'Event Recap', 'Analysis']
 
 const TYPE_STYLE: Record<string, { bg: string; text: string }> = {
@@ -29,7 +51,8 @@ const TYPE_STYLE: Record<string, { bg: string; text: string }> = {
   Analysis:       { bg: 'bg-rose-500/15',     text: 'text-rose-400' },
 }
 
-const ENTRIES: ArticleEntry[] = [
+/** Example/placeholder entries for reference (not used when real data is loaded). */
+const EXAMPLE_ENTRIES: ArticleEntry[] = [
   { id: '1', title: 'Beginner\'s Guide to Resonance Mechanics', summary: 'A comprehensive walkthrough of how Resonance works in combat, from basic frequency matching to advanced Liberation chains.', type: 'Guide', author: 'Commander Rho', date: 'Feb 26', readMin: 8, tags: ['Beginner', 'Combat'] },
   { id: '2', title: 'Patch 2.4 Recap: The Verdant Anomaly', summary: 'Everything that happened during the Verdant Anomaly event, including hidden story triggers, limited rewards, and community milestones.', type: 'Event Recap', author: 'Event Desk', date: 'Feb 22', readMin: 5, tags: ['Event', 'Patch 2.4'] },
   { id: '3', title: 'Why the Sentinel System Needs a Rework', summary: 'An opinionated look at the current limitations of the Sentinel bonding mechanic and proposals for making it more impactful.', type: 'Editorial', author: 'Nyx', date: 'Feb 18', readMin: 12, tags: ['Opinion', 'Sentinel'] },
@@ -47,10 +70,27 @@ export default function ArticlesPage() {
   const { editMode } = useAdmin()
   const { gameId } = useGame()
   const { lang } = useLanguage()
+  const [articles, setArticles] = useState<ArticleListItem[]>([])
+  const [loadingList, setLoadingList] = useState(true)
   const [formOpen, setFormOpen] = useState(false)
   const [editingEntry, setEditingEntry] = useState<ArticleEntry | null>(null)
+  const [editingArticle, setEditingArticle] = useState<Awaited<ReturnType<AdminService['getArticle']>> | null>(null)
+  const [loadingArticle, setLoadingArticle] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
+
+  const fetchArticles = () => {
+    if (!gameId || !lang) return
+    setLoadingList(true)
+    const svc = new ArticleService(gameId, lang)
+    svc.fetchAll('article').then((data) => setArticles(data)).finally(() => setLoadingList(false))
+  }
+
+  useEffect(() => {
+    fetchArticles()
+  }, [gameId, lang])
+
+  const entries: ArticleEntry[] = useMemo(() => articles.map(toArticleEntry), [articles])
 
   const handleSave = async (data: ArticleFormData) => {
     const svc = new AdminService(gameId, lang)
@@ -77,7 +117,42 @@ export default function ArticlesPage() {
     }
     setFormOpen(false)
     setEditingEntry(null)
+    setEditingArticle(null)
+    fetchArticles()
   }
+
+  const openEditForm = (entry: ArticleEntry) => {
+    setEditingEntry(entry)
+    setEditingArticle(null)
+    setLoadingArticle(true)
+    const svc = new AdminService(gameId, lang)
+    svc.getArticle(entry.id).then((article) => {
+      setEditingArticle(article ?? null)
+      if (article) setFormOpen(true)
+    }).finally(() => setLoadingArticle(false))
+  }
+
+  const openAddForm = () => {
+    setEditingEntry(null)
+    setEditingArticle(null)
+    setFormOpen(true)
+  }
+
+  const formArticle = formOpen && editingEntry && editingArticle
+    ? {
+        id: editingArticle.id,
+        title: editingArticle.translations.en?.title ?? '',
+        summary: editingArticle.translations.en?.summary ?? '',
+        content_en: editingArticle.translations.en?.content ?? undefined,
+        content_vi: editingArticle.translations.vi?.content ?? undefined,
+        title_vi: editingArticle.translations.vi?.title ?? '',
+        summary_vi: editingArticle.translations.vi?.summary ?? '',
+        imagePath: editingArticle.image_path,
+        section: editingArticle.section,
+        readTimeMin: editingArticle.read_time_min,
+        isFeatured: editingArticle.is_featured,
+      }
+    : null
 
   const handleDelete = async () => {
     if (!deleteTarget) return
@@ -86,10 +161,11 @@ export default function ArticlesPage() {
     await svc.deleteArticle(deleteTarget)
     setDeleteTarget(null)
     setDeleting(false)
+    fetchArticles()
   }
 
   const filtered = useMemo(() => {
-    let results = ENTRIES.filter((e) => {
+    let results = entries.filter((e) => {
       const matchesSearch =
         e.title.toLowerCase().includes(search.toLowerCase()) ||
         e.summary.toLowerCase().includes(search.toLowerCase())
@@ -97,8 +173,9 @@ export default function ArticlesPage() {
       return matchesSearch && matchesType
     })
     if (sort === 'A → Z') results = [...results].sort((a, b) => a.title.localeCompare(b.title))
+    else if (sort === 'Oldest') results = [...results].reverse()
     return results
-  }, [search, activeType, sort])
+  }, [entries, search, activeType, sort])
 
   const tStyle = (t: string) => TYPE_STYLE[t] ?? TYPE_STYLE.Editorial
 
@@ -163,7 +240,7 @@ export default function ArticlesPage() {
         {editMode && (
           <div className="mb-6">
             <button
-              onClick={() => { setEditingEntry(null); setFormOpen(true) }}
+              onClick={openAddForm}
               className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-500/20 border border-amber-500/30 text-amber-400 hover:bg-amber-500/30 transition-colors text-sm font-medium"
             >
               <span className="material-symbols-outlined text-[18px]">add</span>
@@ -174,6 +251,12 @@ export default function ArticlesPage() {
 
         {/* Results */}
         <div className="space-y-3">
+          {loadingList ? (
+            <div className="flex justify-center py-16">
+              <span className="material-symbols-outlined animate-spin text-4xl text-amber-400">progress_activity</span>
+            </div>
+          ) : (
+          <>
           {filtered.map((entry) => {
             const ts = tStyle(entry.type)
             return (
@@ -216,8 +299,9 @@ export default function ArticlesPage() {
                     {editMode ? (
                       <div className="flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
                         <button
-                          onClick={(e) => { e.preventDefault(); e.stopPropagation(); setEditingEntry(entry); setFormOpen(true) }}
+                          onClick={(e) => { e.preventDefault(); e.stopPropagation(); openEditForm(entry) }}
                           className="p-1.5 rounded text-amber-400 hover:bg-amber-500/20 transition-colors"
+                          disabled={loadingArticle}
                         >
                           <span className="material-symbols-outlined text-[18px]">edit</span>
                         </button>
@@ -239,8 +323,9 @@ export default function ArticlesPage() {
               </div>
             )
           })}
-
-          {filtered.length === 0 && (
+          </>
+          )}
+          {!loadingList && filtered.length === 0 && (
             <div className="text-center py-16 text-slate-500">
               <span className="material-symbols-outlined text-4xl mb-3 block">search_off</span>
               <p className="text-lg">No articles match your search.</p>
@@ -266,19 +351,16 @@ export default function ArticlesPage() {
 
       {formOpen && (
         <ArticleForm
-          article={editingEntry ? {
-            id: editingEntry.id,
-            title: editingEntry.title,
-            summary: editingEntry.summary,
-            imagePath: null,
-            section: 'article',
-            readTimeMin: editingEntry.readMin,
-            isFeatured: false,
-          } : null}
+          article={formArticle}
           defaultSection="article"
           onSave={handleSave}
-          onCancel={() => { setFormOpen(false); setEditingEntry(null) }}
+          onCancel={() => { setFormOpen(false); setEditingEntry(null); setEditingArticle(null) }}
         />
+      )}
+      {loadingArticle && (
+        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/50">
+          <span className="material-symbols-outlined animate-spin text-4xl text-white">progress_activity</span>
+        </div>
       )}
 
       <ConfirmDialog

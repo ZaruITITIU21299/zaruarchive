@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { GLOSSARY_TERMS } from '@/lib/glossary'
 import { useLanguage } from '@/contexts/LanguageContext'
+import { useGlossary } from '@/contexts/GlossaryContext'
 
 interface GlossaryTooltipProps {
   term: string
@@ -10,13 +11,17 @@ interface GlossaryTooltipProps {
 export function GlossaryTooltip({ term, children }: GlossaryTooltipProps) {
   const [show, setShow] = useState(false)
   const { lang } = useLanguage()
-  const entry = GLOSSARY_TERMS[term]
+  const { getTerm } = useGlossary()
 
-  if (!entry) {
+  const dbTerm = getTerm(term)
+  const hardcoded = GLOSSARY_TERMS[term]
+
+  const definition = dbTerm?.definition
+    ?? (hardcoded ? (lang === 'vi' ? hardcoded.vi : hardcoded.en) : undefined)
+
+  if (!definition) {
     return <span className="glossary-term">{children}</span>
   }
-
-  const definition = lang === 'vi' ? entry.vi : entry.en
 
   return (
     <span
@@ -31,7 +36,7 @@ export function GlossaryTooltip({ term, children }: GlossaryTooltipProps) {
             <span className="text-xs font-bold text-primary uppercase tracking-wider">Glossary</span>
             <span className="material-symbols-outlined text-[16px] text-slate-500">info</span>
           </span>
-          <span className="block text-sm text-white font-medium mb-1">{term}</span>
+          <span className="block text-sm text-white font-medium mb-1">{dbTerm?.term ?? term}</span>
           <span className="block text-sm text-slate-300 leading-snug">{definition}</span>
           <span className="absolute top-full left-1/2 -translate-x-1/2 border-8 border-transparent border-t-[#15262d]/95" />
         </span>
