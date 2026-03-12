@@ -7,6 +7,7 @@ import { ArticleService } from '@/services/ArticleService'
 import type { Article } from '@/types'
 import { parseArticleContent } from '@/utils/articleContent'
 import { ArticleContentBlocks } from '@/components/article/ArticleContentBlocks'
+import { ArticleContentWithLayout } from '@/components/article/ArticleContentWithLayout'
 import { EditableArticleContent } from '@/components/article/EditableArticleContent'
 
 const RELATED = [
@@ -178,7 +179,7 @@ export default function ArticleDetailPage() {
             onSaved={handleSaved}
           />
         ) : hasBlocks ? (
-          <ArticleContentBlocks blocks={contentBlocks} />
+          <ArticleContentWithLayout blocks={contentBlocks} />
         ) : article.content?.trim() ? (
           <div className="prose prose-invert max-w-none text-slate-300 whitespace-pre-wrap">
             {article.content}

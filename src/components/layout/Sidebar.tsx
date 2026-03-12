@@ -75,7 +75,11 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
           )}
 
           <button
-            onClick={onToggle}
+            onClick={() => {
+              onToggle()
+              // Emit event for layout components to detect sidebar state
+              window.dispatchEvent(new CustomEvent('sidebarToggle', { detail: { collapsed: !collapsed } }))
+            }}
             className={`flex items-center justify-center rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-colors shrink-0 ${
               collapsed ? "w-10 h-10" : "w-9 h-9"
             }`}

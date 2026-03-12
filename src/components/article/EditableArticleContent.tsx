@@ -128,7 +128,7 @@ export function EditableArticleContent({ blocks: initialBlocks, articleId, onSav
 
   return (
     <div className="relative pb-24">
-      <article className="prose prose-invert max-w-none space-y-2">
+      <article className="prose prose-invert max-w-[90%] mx-auto space-y-2">
         <InsertLine
           index={-1}
           addMenuIdx={addMenuIdx}
@@ -377,8 +377,8 @@ function BlockPreview({ block }: { block: ArticleBlock }) {
   if (block.type === 'figure') {
     if (!block.imageUrl.trim()) return <p className="text-slate-500 italic">Empty figure — click to edit</p>
     return (
-      <figure className="rounded-xl overflow-hidden border border-[#223f49]/50">
-        <img src={block.imageUrl} alt={block.alt ?? block.caption ?? ''} className="w-full" />
+      <figure className="rounded-xl overflow-hidden border border-[#223f49]/50 max-w-[600px]">
+        <img src={block.imageUrl} alt={block.alt ?? block.caption ?? ''} className="w-full h-auto max-h-[700px] object-contain" />
         {block.caption.trim() && (
           <figcaption className="bg-[#101e23] px-5 py-3 text-sm text-slate-500 flex items-center gap-2">
             <span className="material-symbols-outlined text-[16px] text-primary">image</span>
